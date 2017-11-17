@@ -702,7 +702,6 @@ object GameTrainingDriver extends GameDriver {
 
     } finally {
       logger.close()
-      sc.stop()
     }
   }
 }
