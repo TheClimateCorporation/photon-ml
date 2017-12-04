@@ -684,10 +684,10 @@ object GameTrainingDriver extends GameDriver {
    *
    * @param args The command line arguments for the job
    */
-  def main(args: Array[String]): Unit = {
+  def main(args: Seq[String]): Unit = {
 
     // Parse and apply parameters
-    val params: ParamMap = ScoptGameTrainingParametersParser.parseFromCommandLine(args)
+    val params: ParamMap = ScoptGameTrainingParametersParser.parseFromCommandLine(args.toArray)
     params.toSeq.foreach(set)
 
     sc = SparkContextConfiguration.asYarnClient(getOrDefault(applicationName), useKryo = true)
