@@ -15,7 +15,7 @@
 package com.linkedin.photon.ml.optimization
 
 import breeze.linalg.Vector
-import breeze.optimize.{DiffFunction => BreezeDiffFunction, LBFGS => BreezeLBFGS}
+import breeze.optimize.{FirstOrderMinimizer, DiffFunction => BreezeDiffFunction, LBFGS => BreezeLBFGS}
 import org.apache.spark.broadcast.Broadcast
 
 import com.linkedin.photon.ml.function.DiffFunction
@@ -80,8 +80,9 @@ class LBFGS(
       }
     }
   }
-
-  protected val breezeOptimizer = new BreezeLBFGS[Vector[Double]](maxNumIterations, numCorrections, tolerance)
+  // Cast into FirstOrderMinimizer as for child class LBFGSB
+  protected val breezeOptimizer = new BreezeLBFGS[Vector[Double]](maxNumIterations, numCorrections, tolerance).
+    asInstanceOf[FirstOrderMinimizer[Vector[Double], BreezeDiffFunction[Vector[Double]]]]
   @transient
   protected var breezeOptimization: BreezeOptimization = _
 

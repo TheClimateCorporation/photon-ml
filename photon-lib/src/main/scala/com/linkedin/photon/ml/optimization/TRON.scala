@@ -224,9 +224,8 @@ class TRON(
 
         improved = true
         /* project coefficients into constrained space, if any, after the optimization step */
-        val projectedCoefficients = OptimizationUtils.projectCoefficientsToSubspace(coefficients, constraintMap)
         finalState = OptimizerState(
-          projectedCoefficients,
+          coefficients,
           updatedFunctionValue,
           updatedFunctionGradient,
           prevIter + 1)

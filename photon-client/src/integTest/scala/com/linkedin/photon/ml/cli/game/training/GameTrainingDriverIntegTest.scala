@@ -96,7 +96,8 @@ class GameTrainingDriverIntegTest extends SparkTestUtils with GameTestUtils with
   }
 
   /**
-   * Test GAME training with a fixed effect model only, and an intercept, and no validation.
+   * Test GAME training with a fixed effect model only, and an intercept, and no validation, and only the best model is
+   * output.
    *
    * @note Intercepts are optional in [[GameEstimator]], but [[GameDriver]] will setup an intercept by default. This
    *       happens in [[GameDriver.prepareFeatureMapsDefault()]], and there only.
@@ -111,6 +112,7 @@ class GameTrainingDriverIntegTest extends SparkTestUtils with GameTestUtils with
       .copy
       .put(GameTrainingDriver.rootOutputDirectory, outputDir)
       .put(GameTrainingDriver.overrideOutputDirectory, true)
+      .put(GameTrainingDriver.outputMode, ModelOutputMode.BEST)
     newArgs.remove(GameTrainingDriver.validationDataDirectories)
 
     Utils.createHDFSDir(outputDir, sc.hadoopConfiguration)
@@ -120,12 +122,12 @@ class GameTrainingDriverIntegTest extends SparkTestUtils with GameTestUtils with
     val bestFixedEffectModelPath = bestModelPath(outputDir, "fixed-effect", fixedEffectCoordinateId)
     val fs = outputDir.getFileSystem(sc.hadoopConfiguration)
 
-    assertTrue(fs.exists(allFixedEffectModelPath))
-    assertFalse(fs.exists(bestFixedEffectModelPath))
+    assertFalse(fs.exists(allFixedEffectModelPath))
+    assertTrue(fs.exists(bestFixedEffectModelPath))
 
-    assertModelSane(allFixedEffectModelPath, expectedNumCoefficients = 14983)
-    assertTrue(evaluateModel(new Path(outputDir, "models/0")) < errorThreshold)
-    assertTrue(AvroUtils.modelContainsIntercept(sc, allFixedEffectModelPath))
+    assertModelSane(bestFixedEffectModelPath, expectedNumCoefficients = 14983)
+    assertTrue(evaluateModel(new Path(outputDir, "best")) < errorThreshold)
+    assertTrue(AvroUtils.modelContainsIntercept(sc, bestFixedEffectModelPath))
   }
 
   /**
@@ -166,10 +168,41 @@ class GameTrainingDriverIntegTest extends SparkTestUtils with GameTestUtils with
   }
 
   /**
-   * Check that it's possible to train an intercept-only model
+   * Check that it's possible to train an intercept-only model.
    */
   @Test
   def testFixedEffectInterceptOnly(): Unit = sparkTest("testFixedEffectInterceptOnly", useKryo = true) {
+
+    val outputDir = new Path(getTmpDir, "fixedEffectsInterceptOnly")
+    val modifiedFeatureShardConfigs = fixedEffectFeatureShardConfigs
+      .mapValues(_.copy(featureBags = Set()))
+      .map(identity)
+    val params = fixedEffectSeriousRunArgs
+      .put(GameTrainingDriver.rootOutputDirectory, outputDir)
+      .put(GameTrainingDriver.featureShardConfigurations, modifiedFeatureShardConfigs)
+    params.remove(GameTrainingDriver.featureBagsDirectory)
+
+    runDriver(params)
+
+    val allFixedEffectModelPath = allModelPath(outputDir, "fixed-effect", fixedEffectCoordinateId)
+    val bestFixedEffectModelPath = bestModelPath(outputDir, "fixed-effect", fixedEffectCoordinateId)
+    val fs = outputDir.getFileSystem(sc.hadoopConfiguration)
+
+    assertTrue(fs.exists(allFixedEffectModelPath))
+    assertTrue(fs.exists(bestFixedEffectModelPath))
+
+    assertModelSane(allFixedEffectModelPath, expectedNumCoefficients = 1)
+    assertModelSane(bestFixedEffectModelPath, expectedNumCoefficients = 1)
+
+    assertTrue(AvroUtils.modelContainsIntercept(sc, allFixedEffectModelPath))
+    assertTrue(AvroUtils.modelContainsIntercept(sc, bestFixedEffectModelPath))
+  }
+
+  /**
+   * Check that it's possible to train an intercept-only model with feature whitelists.
+   */
+  @Test
+  def testFixedEffectInterceptOnlyFeatureBagsDir(): Unit = sparkTest("testFixedEffectInterceptOnly", useKryo = true) {
 
     val outputDir = new Path(getTmpDir, "fixedEffectsInterceptOnly")
     val modifiedFeatureShardConfigs = fixedEffectFeatureShardConfigs
@@ -287,6 +320,36 @@ class GameTrainingDriverIntegTest extends SparkTestUtils with GameTestUtils with
   }
 
   /**
+   * Test GAME training, loading an off-heap index map.
+   */
+  @Test
+  def testOffHeapIndexMap(): Unit = sparkTest("fixedAndRandomEffects", useKryo = true) {
+
+    // This is a baseline RMSE capture from an assumed-correct implementation on 4/14/2016
+    val errorThreshold = 2.2
+    val outputDir = new Path(getTmpDir, "fixedAndRandomEffects")
+    val indexMapPath = new Path(getClass.getClassLoader.getResource("GameIntegTest/input/feature-indexes").getPath)
+    val params = mixedEffectToyRunArgs
+      .put(GameTrainingDriver.rootOutputDirectory, outputDir)
+      .put(GameTrainingDriver.offHeapIndexMapDirectory, indexMapPath)
+      .put(GameTrainingDriver.offHeapIndexMapPartitions, 1)
+    params.remove(GameTrainingDriver.featureBagsDirectory)
+
+    runDriver(params)
+
+    val globalModelPath = bestModelPath(outputDir, "fixed-effect", "global")
+    val userModelPath = bestModelPath(outputDir, "random-effect", "per-user")
+    val songModelPath = bestModelPath(outputDir, "random-effect", "per-song")
+    val artistModelPath = bestModelPath(outputDir, "random-effect", "per-artist")
+    val fs = outputDir.getFileSystem(sc.hadoopConfiguration)
+
+    assertTrue(fs.exists(globalModelPath))
+    assertTrue(fs.exists(userModelPath))
+    assertTrue(fs.exists(songModelPath))
+    assertTrue(fs.exists(artistModelPath))
+  }
+
+  /**
    * Test that we can calculate feature shard statistics correctly.
    */
   @Test
@@ -294,14 +357,11 @@ class GameTrainingDriverIntegTest extends SparkTestUtils with GameTestUtils with
 
     val outputDir = new Path(getTmpDir, "output")
     val summarizationDir = new Path(outputDir, "summary")
-    val indexMapPath = new Path(getClass.getClassLoader.getResource("GameIntegTest/input/feature-indexes").getPath)
     val fs = outputDir.getFileSystem(sc.hadoopConfiguration)
 
     runDriver(
       mixedEffectToyRunArgs
         .put(GameTrainingDriver.rootOutputDirectory, outputDir)
-        .put(GameTrainingDriver.offHeapIndexMapDirectory, indexMapPath)
-        .put(GameTrainingDriver.offHeapIndexMapPartitions, 1)
         .put(GameTrainingDriver.dataSummaryDirectory, summarizationDir))
 
     mixedEffectFeatureShardConfigs.keys.foreach { featureShardId =>
