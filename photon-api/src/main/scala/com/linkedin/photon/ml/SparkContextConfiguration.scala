@@ -19,6 +19,7 @@ import scala.collection.mutable
 import breeze.linalg.{DenseMatrix, DenseVector, Matrix, SparseVector, Vector}
 import org.apache.spark.serializer.KryoSerializer
 import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.sql.SparkSession
 
 import com.linkedin.photon.ml.data.{GameDatum, LabeledPoint, LocalDataSet}
 import com.linkedin.photon.ml.function._
@@ -92,7 +93,7 @@ object SparkContextConfiguration {
       sparkConf.set(CONF_SPARK_SERIALIZER, classOf[KryoSerializer].getName)
       sparkConf.registerKryoClasses(KRYO_CLASSES_TO_REGISTER)
     }
-    new SparkContext(sparkConf)
+    SparkSession.builder().config(sparkConf).getOrCreate().sparkContext
   }
 
   /**
